@@ -644,3 +644,59 @@ def test_accuracy_moe_align_block_size_fast_paths(fast_path):
     torch.testing.assert_close(actual[0][:num_tokens], expected[0][:num_tokens])
     torch.testing.assert_close(actual[1][:num_blocks], expected[1][:num_blocks])
     torch.testing.assert_close(actual[2], expected[2])
+
+
+@pytest.mark.moe_align_block_size_triton
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA-compatible kernel required"
+)
+@pytest.mark.parametrize("num_experts,block_size", [(3, 4), (10, 16)])
+def test_moe_align_block_size_no_tle_ignores_invalid_experts(num_experts, block_size):
+    """Negative padding routes must not index count/prefix buffers."""
+    device = flaggems_vllm.device
+    topk_ids = torch.tensor(
+        [[-1, 0, 2], [1, -1, -3], [2, 1, -1]],
+        dtype=torch.int32,
+        device=device,
+    )
+    max_num_tokens_padded = topk_ids.numel() + num_experts * (block_size - 1)
+    actual_sorted = torch.empty(max_num_tokens_padded, dtype=torch.int32, device=device)
+    actual_experts = torch.empty(
+        max_num_tokens_padded // block_size, dtype=torch.int32, device=device
+    )
+    actual_count = torch.empty(1, dtype=torch.int32, device=device)
+    expected_sorted = actual_sorted.clone()
+    expected_experts = actual_experts.clone()
+    expected_count = actual_count.clone()
+
+    from flaggems_vllm.ops.moe_align_block_size import (
+        _moe_align_block_size_triton_4stage,
+    )
+
+    _moe_align_block_size_triton_4stage(
+        topk_ids,
+        num_experts,
+        block_size,
+        actual_sorted,
+        actual_experts,
+        actual_count,
+    )
+    torch_moe_align_block_size(
+        topk_ids,
+        num_experts,
+        block_size,
+        expected_sorted,
+        expected_experts,
+        expected_count,
+    )
+    _synchronize()
+    assert actual_count.item() == expected_count.item()
+    torch.testing.assert_close(actual_experts, expected_experts)
+    _verify_expert_level_sorting(
+        actual_sorted,
+        expected_sorted,
+        expected_experts,
+        block_size,
+        actual_count.item(),
+        topk_ids.numel(),
+    )
