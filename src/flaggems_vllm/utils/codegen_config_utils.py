@@ -85,6 +85,15 @@ class CodeGenConfig:
 
 
 CODEGEN_COFIGS = {
+    # Enflame permits at most 65535 CTAs per dimension. Masked pointer
+    # loads support grid-stride traversal of non-contiguous MLP views.
+    vendors.ENFLAME: CodeGenConfig(
+        512,
+        (65535, 65535, 65535),
+        4,
+        False,
+        prefer_1d_tile=int(triton.__version__[0]) < 3,
+    ),
     vendors.NVIDIA: CodeGenConfig(
         512,
         (65536, 65536, 65536),
