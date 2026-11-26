@@ -85,6 +85,14 @@ class CodeGenConfig:
 
 
 CODEGEN_COFIGS = {
+    # GCU requires masked-pointer traversal and at most 65535 CTAs.
+    vendors.ENFLAME: CodeGenConfig(
+        512,
+        (65535, 65535, 65535),
+        4,
+        False,
+        prefer_1d_tile=int(triton.__version__[0]) < 3,
+    ),
     vendors.NVIDIA: CodeGenConfig(
         512,
         (65536, 65536, 65536),
